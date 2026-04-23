@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import SockJS from "sockjs-client/dist/sockjs";
+import { useEffect, useRef, useState } from "react";
+import SockJS from "sockjs-client";
 import Stomp from "stompjs";
 import { API_BASE_URL, WS_BASE_URL } from "./config";
 
@@ -9,18 +9,42 @@ const buildRoomId = (userA, userB) => {
     .join("__");
 };
 
-export default function useChat() {
+export default function useChat(user) {
   const [messages, setMessages] = useState([]);
   const [joined, setJoined] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const [currentUser, setCurrentUser] = useState("");
+  const [currentUser, setCurrentUser] = useState(user?.username || "");
   const [secretKey, setSecretKey] = useState("123");
-  const [contacts, setContacts] = useState(["alice", "bob"]);
+  const [contacts, setContacts] = useState([]);
+  const [recentChats, setRecentChats] = useState([]);
   const [selectedContact, setSelectedContact] = useState("");
   const [activeRoomId, setActiveRoomId] = useState("");
 
   const stompClientRef = useRef(null);
+
+  useEffect(() => {
+    if (user?.username) {
+      setCurrentUser(user.username);
+      loadContacts(user.username);
+    } else {
+      setCurrentUser("");
+      setContacts([]);
+      setRecentChats([]);
+      setSelectedContact("");
+      setActiveRoomId("");
+      setMessages([]);
+      setJoined(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (currentUser && contacts.length > 0) {
+      loadRecentChats(currentUser, contacts);
+    } else {
+      setRecentChats([]);
+    }
+  }, [currentUser, contacts]);
 
   const makeKey = (msg) =>
     `${msg.roomId || ""}-${msg.sender || ""}-${msg.type || ""}-${msg.content || ""}-${msg.timestamp || ""}-${msg.createdAtEpoch || 0}`;
@@ -37,6 +61,78 @@ export default function useChat() {
     );
   };
 
+  const loadContacts = async (username) => {
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/user/contacts?username=${encodeURIComponent(username)}`
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to load contacts");
+      }
+
+      const data = await res.json();
+      const loadedContacts = Array.isArray(data) ? data : [];
+      setContacts(loadedContacts);
+    } catch (error) {
+      console.error("Load contacts error:", error);
+      setContacts([]);
+    }
+  };
+
+  const loadRecentChats = async (username, contactList) => {
+    try {
+      const results = await Promise.all(
+        contactList.map(async (contact) => {
+          const roomId = buildRoomId(username, contact);
+
+          try {
+            const res = await fetch(
+              `${API_BASE_URL}/history?roomId=${encodeURIComponent(roomId)}`
+            );
+
+            if (!res.ok) {
+              return {
+                contact,
+                roomId,
+                lastMessage: null,
+              };
+            }
+
+            const data = await res.json();
+            const history = Array.isArray(data) ? data : [];
+            const lastMessage =
+              history.length > 0 ? history[history.length - 1] : null;
+
+            return {
+              contact,
+              roomId,
+              lastMessage,
+            };
+          } catch (error) {
+            console.error(`Recent chat load error for ${contact}:`, error);
+            return {
+              contact,
+              roomId,
+              lastMessage: null,
+            };
+          }
+        })
+      );
+
+      results.sort((a, b) => {
+        const aTime = a.lastMessage?.createdAtEpoch || 0;
+        const bTime = b.lastMessage?.createdAtEpoch || 0;
+        return bTime - aTime;
+      });
+
+      setRecentChats(results);
+    } catch (error) {
+      console.error("Load recent chats error:", error);
+      setRecentChats([]);
+    }
+  };
+
   const loadHistory = async (roomId) => {
     const res = await fetch(
       `${API_BASE_URL}/history?roomId=${encodeURIComponent(roomId)}`
@@ -48,6 +144,16 @@ export default function useChat() {
 
     const data = await res.json();
     return Array.isArray(data) ? data : [];
+  };
+
+  const wakeBackend = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/history?roomId=__wake__`, {
+        method: "GET",
+      });
+    } catch (error) {
+      console.warn("Backend wake attempt failed, continuing...", error);
+    }
   };
 
   const sha256 = async (text) => {
@@ -83,16 +189,47 @@ export default function useChat() {
     }
   };
 
-  const addContact = (name) => {
+  const addContact = async (name) => {
     const clean = name.trim().toLowerCase();
+
     if (!clean) return;
 
-    setContacts((prev) => {
-      if (prev.includes(clean) || clean === currentUser.trim().toLowerCase()) {
-        return prev;
+    if (!currentUser) {
+      alert("User not loaded");
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/user/addContact?username=${encodeURIComponent(
+          currentUser
+        )}&contactUsername=${encodeURIComponent(clean)}`
+      );
+
+      const text = await res.text();
+
+      if (!res.ok) {
+        if (text.includes("Contact not found")) {
+          alert("Contact username not found");
+          return;
+        }
+
+        if (text.includes("You cannot add yourself")) {
+          alert("You cannot add yourself");
+          return;
+        }
+
+        throw new Error(text || "Failed to add contact");
       }
-      return [...prev, clean];
-    });
+
+      const data = JSON.parse(text);
+      const updatedContacts = Array.isArray(data.contacts) ? data.contacts : [];
+      setContacts(updatedContacts);
+      await loadRecentChats(currentUser, updatedContacts);
+    } catch (error) {
+      console.error("Add contact error:", error);
+      alert("Unable to add contact");
+    }
   };
 
   const connectToPrivateChat = async (userName, contactName, key) => {
@@ -124,6 +261,8 @@ export default function useChat() {
     setActiveRoomId(roomId);
     setIsConnecting(true);
     setMessages([]);
+
+    await wakeBackend();
 
     const socket = new SockJS(WS_BASE_URL);
     const stomp = Stomp.over(socket);
@@ -161,10 +300,12 @@ export default function useChat() {
 
             setJoined(true);
             setIsConnecting(false);
+            await loadRecentChats(normalizedUser, contacts);
             return;
           }
 
           setMessages((prev) => mergeMessages(prev, [parsed]));
+          await loadRecentChats(normalizedUser, contacts);
         });
 
         stomp.send(
@@ -196,13 +337,7 @@ export default function useChat() {
   ) => {
     if (!joined || !stompClientRef.current || !content.trim()) return;
 
-    const baseString = buildIntegrityBase(
-      sender,
-      content,
-      roomId,
-      type,
-      key
-    );
+    const baseString = buildIntegrityBase(sender, content, roomId, type, key);
 
     let integrityHash = await sha256(baseString);
 
@@ -231,6 +366,7 @@ export default function useChat() {
     currentUser,
     secretKey,
     contacts,
+    recentChats,
     selectedContact,
     activeRoomId,
     setCurrentUser,

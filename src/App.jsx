@@ -1,16 +1,25 @@
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import useSound from 'use-sound'
-import Landing from './pages/Landing'
-import Chat from './pages/Chat'
-import Simulation from './pages/Simulation'
-import Analytics from './pages/Analytics'
-import useChat from './useChat'
-import { MessageSquare, Activity, BarChart3, Radio, TerminalSquare, Power } from 'lucide-react'
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import useSound from "use-sound";
+import Landing from "./pages/Landing";
+import Chat from "./pages/Chat";
+import Simulation from "./pages/Simulation";
+import Analytics from "./pages/Analytics";
+import Setup from "./pages/Setup";
+import useChat from "./useChat";
+import { API_BASE_URL } from "./config";
+import {
+  MessageSquare,
+  Activity,
+  BarChart3,
+  Radio,
+  TerminalSquare,
+  Power,
+} from "lucide-react";
 
 const BootSequence = ({ onComplete, playTyping, playPowerUp }) => {
-  const [logs, setLogs] = useState([])
-  const [progress, setProgress] = useState(0)
+  const [logs, setLogs] = useState([]);
+  const [progress, setProgress] = useState(0);
 
   const bootMessages = [
     "Starting up system...",
@@ -18,42 +27,42 @@ const BootSequence = ({ onComplete, playTyping, playPowerUp }) => {
     "Applying end-to-end encryption...",
     "Securing private chat rooms...",
     "Connecting to servers...",
-    "System Ready."
-  ]
+    "System Ready.",
+  ];
 
   useEffect(() => {
-    let currentLog = 0
-    let progressValue = 0
+    let currentLog = 0;
+    let progressValue = 0;
 
     const logInterval = setInterval(() => {
       if (currentLog < bootMessages.length) {
-        setLogs(prev => [...prev, bootMessages[currentLog]])
-        playTyping()
-        currentLog++
+        setLogs((prev) => [...prev, bootMessages[currentLog]]);
+        playTyping();
+        currentLog++;
       }
-    }, 400)
+    }, 400);
 
     const progressInterval = setInterval(() => {
-      progressValue += Math.floor(Math.random() * 15)
+      progressValue += Math.floor(Math.random() * 15);
       if (progressValue >= 100) {
-        progressValue = 100
-        clearInterval(progressInterval)
+        progressValue = 100;
+        clearInterval(progressInterval);
 
         setTimeout(() => {
-          setLogs(prev => [...prev, "WELCOME TO ENTANGLE."])
-          playPowerUp()
+          setLogs((prev) => [...prev, "WELCOME TO ENTANGLE."]);
+          playPowerUp();
 
-          setTimeout(onComplete, 1500)
-        }, 500)
+          setTimeout(onComplete, 1500);
+        }, 500);
       }
-      setProgress(progressValue)
-    }, 120)
+      setProgress(progressValue);
+    }, 120);
 
     return () => {
-      clearInterval(logInterval)
-      clearInterval(progressInterval)
-    }
-  }, [onComplete, playTyping, playPowerUp])
+      clearInterval(logInterval);
+      clearInterval(progressInterval);
+    };
+  }, [onComplete, playTyping, playPowerUp]);
 
   return (
     <motion.div
@@ -68,13 +77,21 @@ const BootSequence = ({ onComplete, playTyping, playPowerUp }) => {
       <div className="max-w-3xl space-y-2 relative z-10">
         <div className="mb-8 flex items-center gap-4 text-indigo-500">
           <TerminalSquare className="animate-pulse" size={32} />
-          <span className="text-2xl font-bold tracking-widest uppercase">Connecting...</span>
+          <span className="text-2xl font-bold tracking-widest uppercase">
+            Connecting...
+          </span>
         </div>
 
         {logs.map((log, index) => (
           <motion.div
-            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} key={index}
-            className={`text-sm md:text-base ${log === "WELCOME TO ENTANGLE." ? "text-emerald-400 font-bold text-xl mt-8 animate-pulse" : "text-indigo-300"}`}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            key={index}
+            className={`text-sm md:text-base ${
+              log === "WELCOME TO ENTANGLE."
+                ? "text-emerald-400 font-bold text-xl mt-8 animate-pulse"
+                : "text-indigo-300"
+            }`}
           >
             {`> ${log}`}
           </motion.div>
@@ -82,62 +99,147 @@ const BootSequence = ({ onComplete, playTyping, playPowerUp }) => {
 
         <div className="mt-12 pt-8 border-t border-indigo-900/50 flex items-center gap-6">
           <div className="flex-1 h-1 bg-indigo-950 rounded-full overflow-hidden">
-            <motion.div className="h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.8)]" animate={{ width: `${progress}%` }} />
+            <motion.div
+              className="h-full bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.8)]"
+              animate={{ width: `${progress}%` }}
+            />
           </div>
-          <span className="text-indigo-400 w-16 text-right font-bold">{progress}%</span>
+          <span className="text-indigo-400 w-16 text-right font-bold">
+            {progress}%
+          </span>
         </div>
       </div>
     </motion.div>
-  )
-}
+  );
+};
 
 const VideoBackground = () => {
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none z-0 bg-black">
-      <video autoPlay loop muted playsInline className="absolute top-1/2 left-1/2 min-w-full min-h-full w-auto h-auto -translate-x-1/2 -translate-y-1/2 object-cover opacity-30" style={{ filter: "brightness(0.7) contrast(1.2)" }}>
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="absolute top-1/2 left-1/2 min-w-full min-h-full w-auto h-auto -translate-x-1/2 -translate-y-1/2 object-cover opacity-30"
+        style={{ filter: "brightness(0.7) contrast(1.2)" }}
+      >
         <source src="/bg-video.mp4" type="video/mp4" />
       </video>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.8)_100%)]" />
       <div className="absolute inset-0 opacity-[0.03] bg-[linear-gradient(#ffffff03_1px,transparent_1px),linear-gradient(90deg,#ffffff03_1px,transparent_1px)] bg-[size:64px_64px]" />
       <div className="absolute inset-0 mix-blend-overlay opacity-10 bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')]" />
     </div>
-  )
-}
+  );
+};
 
 export default function App() {
-  const [hasStarted, setHasStarted] = useState(false)
-  const [isBooting, setIsBooting] = useState(true)
-  const [currentPage, setCurrentPage] = useState('home')
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isBooting, setIsBooting] = useState(true);
+  const [currentPage, setCurrentPage] = useState("home");
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  const chat = useChat()
+  useEffect(() => {
+    const token = localStorage.getItem("sessionToken");
+    console.log("Token found on app load:", token);
 
-  const [playClick] = useSound('/sounds/click.mp3', { volume: 0.25 })
-  const [playHover] = useSound('/sounds/hover.mp3', { volume: 0.15 })
-  const [playTyping] = useSound('/sounds/typing.mp3', { volume: 0.15, interrupt: false })
-  const [playPowerUp] = useSound('/sounds/powerup.mp3', { volume: 0.4 })
+    if (!token) {
+      setAuthLoading(false);
+      return;
+    }
+
+    fetch(`${API_BASE_URL}/user/restore?token=${encodeURIComponent(token)}`)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("Session restore failed");
+        }
+        return res.json();
+      })
+      .then((data) => {
+        console.log("Restore success:", data);
+        setUser(data);
+      })
+      .catch((error) => {
+        console.error("Restore error:", error);
+        localStorage.removeItem("sessionToken");
+        localStorage.removeItem("username");
+        localStorage.removeItem("displayName");
+      })
+      .finally(() => {
+        setAuthLoading(false);
+      });
+  }, []);
+
+  const handleLogout = async () => {
+    const token = localStorage.getItem("sessionToken");
+
+    try {
+      if (token) {
+        await fetch(`${API_BASE_URL}/user/logout?token=${encodeURIComponent(token)}`);
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+    } finally {
+      localStorage.removeItem("sessionToken");
+      localStorage.removeItem("username");
+      localStorage.removeItem("displayName");
+      setUser(null);
+      setHasStarted(false);
+      setIsBooting(true);
+      setCurrentPage("home");
+    }
+  };
+
+  const chat = useChat(user);
+
+  const [playClick] = useSound("/sounds/click.mp3", { volume: 0.25 });
+  const [playHover] = useSound("/sounds/hover.mp3", { volume: 0.15 });
+  const [playTyping] = useSound("/sounds/typing.mp3", {
+    volume: 0.15,
+    interrupt: false,
+  });
+  const [playPowerUp] = useSound("/sounds/powerup.mp3", { volume: 0.4 });
 
   const handlePageChange = (pageId) => {
-    playClick()
-    setCurrentPage(pageId)
+    playClick();
+    setCurrentPage(pageId);
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        Loading session...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Setup onLogin={setUser} />;
   }
 
   if (!hasStarted) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center font-mono selection:bg-indigo-500/40">
         <motion.button
-          whileHover={{ scale: 1.05, boxShadow: "0 0 30px rgba(99,102,241,0.4)" }}
+          whileHover={{
+            scale: 1.05,
+            boxShadow: "0 0 30px rgba(99,102,241,0.4)",
+          }}
           whileTap={{ scale: 0.95 }}
           onClick={() => {
-            playClick()
-            setHasStarted(true)
+            playClick();
+            setHasStarted(true);
           }}
           className="flex flex-col items-center gap-6 text-indigo-500 hover:text-indigo-400 transition-colors p-12 rounded-3xl border border-indigo-900/50 hover:border-indigo-500/50 bg-indigo-950/20"
         >
           <Power size={64} className="animate-pulse" />
-          <span className="text-xl tracking-[0.5em] font-bold">START SYSTEM</span>
+          <span className="text-xl tracking-[0.5em] font-bold">
+            START SYSTEM
+          </span>
         </motion.button>
       </div>
-    )
+    );
   }
 
   return (
@@ -152,7 +254,9 @@ export default function App() {
         ) : (
           <motion.div
             key="main-app"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1 }}
             className="flex-1 flex flex-col relative z-10 w-full min-h-screen"
           >
             <VideoBackground />
@@ -163,28 +267,47 @@ export default function App() {
                 <motion.div
                   whileHover={{ scale: 1.05 }}
                   className="flex items-center gap-3 cursor-pointer group"
-                  onClick={() => handlePageChange('home')}
+                  onClick={() => handlePageChange("home")}
                   onMouseEnter={playHover}
                 >
                   <div className="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
-                    <Radio className="text-indigo-500 group-hover:animate-spin" size={20} />
+                    <Radio
+                      className="text-indigo-500 group-hover:animate-spin"
+                      size={20}
+                    />
                   </div>
                   <span className="text-xl font-bold tracking-[0.4em] text-white drop-shadow-[0_0_15px_rgba(99,102,241,0.5)]">
                     ENTANGLE
                   </span>
                 </motion.div>
 
-                <div className="flex gap-8 md:gap-12 font-mono">
+                <div className="flex items-center gap-6 md:gap-10 font-mono">
                   {[
-                    { id: 'chat', icon: <MessageSquare size={14} />, label: 'SECURE CHAT' },
-                    { id: 'simulation', icon: <Activity size={14} />, label: 'HOW IT WORKS' },
-                    { id: 'analytics', icon: <BarChart3 size={14} />, label: 'DASHBOARD' }
+                    {
+                      id: "chat",
+                      icon: <MessageSquare size={14} />,
+                      label: "SECURE CHAT",
+                    },
+                    {
+                      id: "simulation",
+                      icon: <Activity size={14} />,
+                      label: "HOW IT WORKS",
+                    },
+                    {
+                      id: "analytics",
+                      icon: <BarChart3 size={14} />,
+                      label: "DASHBOARD",
+                    },
                   ].map((item) => (
                     <button
                       key={item.id}
                       onClick={() => handlePageChange(item.id)}
                       onMouseEnter={playHover}
-                      className={`group relative flex items-center gap-2 uppercase text-[10px] md:text-[11px] tracking-[0.2em] transition-all py-2 ${currentPage === item.id ? 'text-white' : 'text-slate-500 hover:text-indigo-400'}`}
+                      className={`group relative flex items-center gap-2 uppercase text-[10px] md:text-[11px] tracking-[0.2em] transition-all py-2 ${
+                        currentPage === item.id
+                          ? "text-white"
+                          : "text-slate-500 hover:text-indigo-400"
+                      }`}
                     >
                       <span className="hidden md:block">{item.icon}</span>
                       {item.label}
@@ -196,24 +319,31 @@ export default function App() {
                       )}
                     </button>
                   ))}
+
+                  <button
+                    onClick={handleLogout}
+                    className="rounded-lg border border-red-500/30 px-3 py-2 text-[10px] md:text-[11px] uppercase tracking-[0.2em] text-red-300 hover:bg-red-500/10"
+                  >
+                    Logout
+                  </button>
                 </div>
               </div>
             </nav>
 
             <main className="flex-1 w-full px-8 lg:px-16 py-12 flex flex-col relative z-10">
-              <div className={currentPage === 'home' ? 'block flex-1' : 'hidden'}>
+              <div className={currentPage === "home" ? "block flex-1" : "hidden"}>
                 <Landing setPage={setCurrentPage} />
               </div>
 
-              <div className={currentPage === 'chat' ? 'block flex-1' : 'hidden'}>
+              <div className={currentPage === "chat" ? "block flex-1" : "hidden"}>
                 <Chat chat={chat} />
               </div>
 
-              <div className={currentPage === 'simulation' ? 'block flex-1' : 'hidden'}>
+              <div className={currentPage === "simulation" ? "block flex-1" : "hidden"}>
                 <Simulation />
               </div>
 
-              <div className={currentPage === 'analytics' ? 'block flex-1' : 'hidden'}>
+              <div className={currentPage === "analytics" ? "block flex-1" : "hidden"}>
                 <Analytics chat={chat} />
               </div>
             </main>
@@ -230,5 +360,5 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
-  )
+  );
 }

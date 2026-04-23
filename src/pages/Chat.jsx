@@ -26,9 +26,9 @@ export default function Chat({ chat }) {
     currentUser,
     secretKey,
     contacts,
+    recentChats,
     selectedContact,
     activeRoomId,
-    setCurrentUser,
     setSecretKey,
     addContact,
     connectToPrivateChat,
@@ -67,9 +67,9 @@ export default function Chat({ chat }) {
     connectToPrivateChat(currentUser, contactName, secretKey);
   };
 
-  const handleAddContact = () => {
+  const handleAddContact = async () => {
     if (!newContact.trim()) return;
-    addContact(newContact);
+    await addContact(newContact);
     setNewContact("");
   };
 
@@ -175,11 +175,9 @@ export default function Chat({ chat }) {
           <div className="space-y-3">
             <input
               type="text"
-              placeholder="Enter Your Name"
               value={currentUser}
-              onChange={(e) => setCurrentUser(e.target.value.toLowerCase())}
-              disabled={joined || isConnecting}
-              className="w-full bg-black/50 border border-slate-700 rounded-lg p-3 text-white font-mono text-sm focus:outline-none placeholder:text-slate-600"
+              disabled
+              className="w-full bg-black/50 border border-slate-700 rounded-lg p-3 text-white font-mono text-sm focus:outline-none placeholder:text-slate-600 opacity-70"
             />
 
             <input
@@ -221,6 +219,59 @@ export default function Chat({ chat }) {
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.06 }}
+          className="p-6 rounded-2xl bg-black/40 backdrop-blur-xl border border-white/5"
+        >
+          <div className="flex items-center gap-2 mb-5 text-emerald-400">
+            <MessageCircle size={16} />
+            <h4 className="text-xs font-mono uppercase tracking-widest font-bold">
+              Recent Chats
+            </h4>
+          </div>
+
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+            {recentChats.length === 0 ? (
+              <div className="text-sm text-slate-500 font-mono">
+                No recent chats yet.
+              </div>
+            ) : (
+              recentChats.map((chatItem) => {
+                const active = selectedContact === chatItem.contact;
+                const preview =
+                  chatItem.lastMessage?.content || "No messages yet";
+                const time = chatItem.lastMessage?.timestamp || "";
+
+                return (
+                  <button
+                    key={chatItem.contact}
+                    onClick={() => handleJoinPrivateChat(chatItem.contact)}
+                    className={`w-full text-left rounded-xl border px-4 py-3 transition-all ${
+                      active
+                        ? "border-emerald-500/50 bg-emerald-500/10 text-white"
+                        : "border-white/5 bg-white/5 text-slate-300 hover:border-emerald-500/30 hover:bg-emerald-500/5"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <span className="font-mono text-sm uppercase tracking-wide">
+                        {chatItem.contact}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {time}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400 truncate">
+                      {preview}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.08 }}
           className="p-6 rounded-2xl bg-black/40 backdrop-blur-xl border border-white/5"
         >
@@ -251,7 +302,7 @@ export default function Chat({ chat }) {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <MessageCircle size={16} />
+                        <Users size={16} />
                         <span className="font-mono text-sm uppercase tracking-wide">
                           {contact}
                         </span>
@@ -353,13 +404,27 @@ export default function Chat({ chat }) {
             </div>
           </div>
 
-          <div className="text-right">
-            <div className="text-[10px] uppercase tracking-widest font-mono text-slate-500">
-              Session
+          <div className="text-right flex flex-col items-end gap-2">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest font-mono text-slate-500">
+                Session
+              </div>
+              <div className="text-sm font-mono text-indigo-300">
+                {joined ? "Connected" : isConnecting ? "Connecting..." : "Idle"}
+              </div>
             </div>
-            <div className="text-sm font-mono text-indigo-300">
-              {joined ? "Connected" : isConnecting ? "Connecting..." : "Idle"}
-            </div>
+
+            <button
+              onClick={() => {
+                localStorage.removeItem("sessionToken");
+                localStorage.removeItem("username");
+                localStorage.removeItem("displayName");
+                window.location.reload();
+              }}
+              className="rounded-lg border border-red-500/30 px-3 py-2 text-[10px] uppercase tracking-widest text-red-300 hover:bg-red-500/10"
+            >
+              Clear Device Session
+            </button>
           </div>
         </div>
 
