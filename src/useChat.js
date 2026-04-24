@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import SockJS from "sockjs-client";
 import Stomp from "stompjs";
+import useSound from "use-sound";
 import { API_BASE_URL, WS_BASE_URL } from "./config";
 
 const buildRoomId = (userA, userB) => {
@@ -8,6 +9,90 @@ const buildRoomId = (userA, userB) => {
     .sort()
     .join("__");
 };
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+async function deriveKey(secretKey, roomId) {
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    textEncoder.encode(secretKey),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: textEncoder.encode(roomId),
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    {
+      name: "AES-GCM",
+      length: 256,
+    },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+function bytesToBase64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function base64ToBytes(base64) {
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+}
+
+async function encryptQuantumVeil(plainText, secretKey, roomId) {
+  if (!plainText) return plainText;
+
+  const key = await deriveKey(secretKey, roomId);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+
+  const cipherBuffer = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    textEncoder.encode(plainText)
+  );
+
+  const cipherBytes = new Uint8Array(cipherBuffer);
+
+  return JSON.stringify({
+    mode: "QV1",
+    iv: bytesToBase64(iv),
+    data: bytesToBase64(cipherBytes),
+  });
+}
+
+async function decryptQuantumVeil(cipherText, secretKey, roomId) {
+  if (!cipherText) return "";
+
+  try {
+    const parsed = JSON.parse(cipherText);
+
+    if (parsed.mode !== "QV1") {
+      return cipherText;
+    }
+
+    const key = await deriveKey(secretKey, roomId);
+    const iv = base64ToBytes(parsed.iv);
+    const data = base64ToBytes(parsed.data);
+
+    const plainBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      data
+    );
+
+    return textDecoder.decode(plainBuffer);
+  } catch {
+    return "[Encrypted message - wrong key or unreadable]";
+  }
+}
 
 export default function useChat(user) {
   const [messages, setMessages] = useState([]);
@@ -20,8 +105,56 @@ export default function useChat(user) {
   const [recentChats, setRecentChats] = useState([]);
   const [selectedContact, setSelectedContact] = useState("");
   const [activeRoomId, setActiveRoomId] = useState("");
+  const [unreadMap, setUnreadMap] = useState({});
+  const [consumedMessages, setConsumedMessages] = useState(() => new Set());
 
   const stompClientRef = useRef(null);
+  const currentUserRef = useRef(user?.username || "");
+  const activeRoomIdRef = useRef("");
+
+  const [playNotify] = useSound("/sounds/notify.mp3", {
+    volume: 0.5,
+    interrupt: true,
+    soundEnabled: true,
+  });
+
+  const requestBrowserNotifications = async () => {
+    if (!("Notification" in window)) {
+      return "unsupported";
+    }
+
+    if (Notification.permission === "default") {
+      return await Notification.requestPermission();
+    }
+
+    return Notification.permission;
+  };
+
+  const showBrowserNotification = (title, body) => {
+    if (!("Notification" in window)) {
+      return;
+    }
+
+    if (Notification.permission === "granted") {
+      const notification = new Notification(title, {
+        body,
+        icon: "/favicon.ico",
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+    }
+  };
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  useEffect(() => {
+    activeRoomIdRef.current = activeRoomId;
+  }, [activeRoomId]);
 
   useEffect(() => {
     if (user?.username) {
@@ -35,19 +168,21 @@ export default function useChat(user) {
       setActiveRoomId("");
       setMessages([]);
       setJoined(false);
+      setUnreadMap({});
+      setConsumedMessages(new Set());
     }
   }, [user]);
 
   useEffect(() => {
     if (currentUser && contacts.length > 0) {
-      loadRecentChats(currentUser, contacts);
+      loadRecentChats(currentUser, contacts, secretKey);
     } else {
       setRecentChats([]);
     }
-  }, [currentUser, contacts]);
+  }, [currentUser, contacts, secretKey]);
 
   const makeKey = (msg) =>
-    `${msg.roomId || ""}-${msg.sender || ""}-${msg.type || ""}-${msg.content || ""}-${msg.timestamp || ""}-${msg.createdAtEpoch || 0}`;
+    `${msg.id || ""}-${msg.roomId || ""}-${msg.sender || ""}-${msg.type || ""}-${msg.content || ""}-${msg.timestamp || ""}-${msg.createdAtEpoch || 0}`;
 
   const mergeMessages = (prev, incoming) => {
     const map = new Map();
@@ -58,6 +193,23 @@ export default function useChat(user) {
 
     return Array.from(map.values()).sort(
       (a, b) => (a.createdAtEpoch || 0) - (b.createdAtEpoch || 0)
+    );
+  };
+
+  const markMessageConsumed = (messageKey) => {
+    setConsumedMessages((prev) => {
+      const next = new Set(prev);
+      next.add(messageKey);
+      return next;
+    });
+  };
+
+  const decryptHistoryMessages = async (history, key, roomId) => {
+    return Promise.all(
+      history.map(async (msg) => ({
+        ...msg,
+        plainContent: await decryptQuantumVeil(msg.content, key, roomId),
+      }))
     );
   };
 
@@ -80,7 +232,11 @@ export default function useChat(user) {
     }
   };
 
-  const loadRecentChats = async (username, contactList) => {
+  const loadRecentChats = async (
+    username,
+    contactList,
+    keyForPreview = secretKey
+  ) => {
     try {
       const results = await Promise.all(
         contactList.map(async (contact) => {
@@ -104,10 +260,21 @@ export default function useChat(user) {
             const lastMessage =
               history.length > 0 ? history[history.length - 1] : null;
 
+            const plainLastMessage = lastMessage
+              ? {
+                  ...lastMessage,
+                  plainContent: await decryptQuantumVeil(
+                    lastMessage.content,
+                    keyForPreview,
+                    roomId
+                  ),
+                }
+              : null;
+
             return {
               contact,
               roomId,
-              lastMessage,
+              lastMessage: plainLastMessage,
             };
           } catch (error) {
             console.error(`Recent chat load error for ${contact}:`, error);
@@ -133,7 +300,7 @@ export default function useChat(user) {
     }
   };
 
-  const loadHistory = async (roomId) => {
+  const loadHistory = async (roomId, key) => {
     const res = await fetch(
       `${API_BASE_URL}/history?roomId=${encodeURIComponent(roomId)}`
     );
@@ -143,7 +310,8 @@ export default function useChat(user) {
     }
 
     const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    const history = Array.isArray(data) ? data : [];
+    return decryptHistoryMessages(history, key, roomId);
   };
 
   const wakeBackend = async () => {
@@ -157,8 +325,7 @@ export default function useChat(user) {
   };
 
   const sha256 = async (text) => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(text);
+    const data = textEncoder.encode(text);
     const hashBuffer = await crypto.subtle.digest("SHA-256", data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -225,7 +392,7 @@ export default function useChat(user) {
       const data = JSON.parse(text);
       const updatedContacts = Array.isArray(data.contacts) ? data.contacts : [];
       setContacts(updatedContacts);
-      await loadRecentChats(currentUser, updatedContacts);
+      await loadRecentChats(currentUser, updatedContacts, secretKey);
     } catch (error) {
       console.error("Add contact error:", error);
       alert("Unable to add contact");
@@ -248,6 +415,7 @@ export default function useChat(user) {
       currentUser.trim().toLowerCase() === normalizedUser
     ) {
       setSelectedContact(normalizedContact);
+      setUnreadMap((prev) => ({ ...prev, [roomId]: 0 }));
       return;
     }
 
@@ -261,6 +429,7 @@ export default function useChat(user) {
     setActiveRoomId(roomId);
     setIsConnecting(true);
     setMessages([]);
+    setUnreadMap((prev) => ({ ...prev, [roomId]: 0 }));
 
     await wakeBackend();
 
@@ -285,27 +454,63 @@ export default function useChat(user) {
           ) {
             alert(parsed.content);
             setMessages([]);
-            disconnect();
+            setJoined(false);
+            setIsConnecting(false);
+            setActiveRoomId("");
+            setSelectedContact("");
             return;
+          }
+
+          const decryptedParsed = {
+            ...parsed,
+            plainContent: await decryptQuantumVeil(parsed.content, key, roomId),
+          };
+
+          const incomingFromOther =
+            decryptedParsed.sender !== currentUserRef.current &&
+            decryptedParsed.type !== "JOIN" &&
+            decryptedParsed.type !== "LEAVE";
+
+          if (incomingFromOther && activeRoomIdRef.current !== roomId) {
+            setUnreadMap((prev) => ({
+              ...prev,
+              [roomId]: (prev[roomId] || 0) + 1,
+            }));
+
+            try {
+              playNotify();
+            } catch (e) {
+              console.warn("Notify sound could not play:", e);
+            }
+
+            showBrowserNotification(
+              `ENTANGLE • @${decryptedParsed.sender || "unknown"}`,
+              decryptedParsed.type === "ONE_TIME"
+                ? "New Heisenberg one-time message"
+                : "New encrypted message"
+            );
           }
 
           if (parsed.type === "JOIN" && parsed.sender === normalizedUser) {
             try {
-              const history = await loadHistory(roomId);
-              setMessages((prev) => mergeMessages(prev, [...history, parsed]));
+              const history = await loadHistory(roomId, key);
+              setMessages((prev) =>
+                mergeMessages(prev, [...history, decryptedParsed])
+              );
             } catch (error) {
               console.error("History load error:", error);
-              setMessages((prev) => mergeMessages(prev, [parsed]));
+              setMessages((prev) => mergeMessages(prev, [decryptedParsed]));
             }
 
             setJoined(true);
             setIsConnecting(false);
-            await loadRecentChats(normalizedUser, contacts);
+            setUnreadMap((prev) => ({ ...prev, [roomId]: 0 }));
+            await loadRecentChats(normalizedUser, contacts, key);
             return;
           }
 
-          setMessages((prev) => mergeMessages(prev, [parsed]));
-          await loadRecentChats(normalizedUser, contacts);
+          setMessages((prev) => mergeMessages(prev, [decryptedParsed]));
+          await loadRecentChats(normalizedUser, contacts, key);
         });
 
         stomp.send(
@@ -337,7 +542,15 @@ export default function useChat(user) {
   ) => {
     if (!joined || !stompClientRef.current || !content.trim()) return;
 
-    const baseString = buildIntegrityBase(sender, content, roomId, type, key);
+    const encryptedContent = await encryptQuantumVeil(content, key, roomId);
+
+    const baseString = buildIntegrityBase(
+      sender,
+      encryptedContent,
+      roomId,
+      type,
+      key
+    );
 
     let integrityHash = await sha256(baseString);
 
@@ -350,11 +563,12 @@ export default function useChat(user) {
       {},
       JSON.stringify({
         sender,
-        content,
+        content: encryptedContent,
         roomId,
         type,
         integrityHash,
         secretKey: key,
+        oneTime: type === "ONE_TIME",
       })
     );
   };
@@ -369,11 +583,15 @@ export default function useChat(user) {
     recentChats,
     selectedContact,
     activeRoomId,
+    unreadMap,
+    consumedMessages,
     setCurrentUser,
     setSecretKey,
     addContact,
     setSelectedContact,
     connectToPrivateChat,
     sendMessage,
+    markMessageConsumed,
+    requestBrowserNotifications,
   };
 }
