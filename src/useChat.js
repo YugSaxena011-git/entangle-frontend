@@ -106,7 +106,15 @@ export default function useChat(user) {
   const [selectedContact, setSelectedContact] = useState("");
   const [activeRoomId, setActiveRoomId] = useState("");
   const [unreadMap, setUnreadMap] = useState({});
-  const [consumedMessages, setConsumedMessages] = useState(() => new Set());
+
+  const [consumedMessages, setConsumedMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem("entangle_consumed");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   const stompClientRef = useRef(null);
   const currentUserRef = useRef(user?.username || "");
@@ -181,8 +189,7 @@ export default function useChat(user) {
     }
   }, [currentUser, contacts, secretKey]);
 
-  const makeKey = (msg) =>
-    `${msg.id || ""}-${msg.roomId || ""}-${msg.sender || ""}-${msg.type || ""}-${msg.content || ""}-${msg.timestamp || ""}-${msg.createdAtEpoch || 0}`;
+  const makeKey = (msg) => `${msg.roomId || ""}-${msg.sender || ""}-${msg.createdAtEpoch || 0}`;
 
   const mergeMessages = (prev, incoming) => {
     const map = new Map();
@@ -196,12 +203,28 @@ export default function useChat(user) {
     );
   };
 
-  const markMessageConsumed = (messageKey) => {
+  const markMessageConsumed = async (messageKey) => {
     setConsumedMessages((prev) => {
       const next = new Set(prev);
       next.add(messageKey);
+      localStorage.setItem("entangle_consumed", JSON.stringify(Array.from(next)));
       return next;
     });
+
+    const msgToPurge = messages.find(m => makeKey(m) === messageKey);
+    
+    if (msgToPurge) {
+      try {
+        const query = msgToPurge.id 
+          ? `id=${msgToPurge.id}`
+          : `roomId=${encodeURIComponent(msgToPurge.roomId)}&epoch=${msgToPurge.createdAtEpoch}`;
+
+        await fetch(`${API_BASE_URL}/consume?${query}`, {
+          method: "DELETE",
+        });
+      } catch (error) {
+      }
+    }
   };
 
   const decryptHistoryMessages = async (history, key, roomId) => {
@@ -229,7 +252,6 @@ export default function useChat(user) {
       const loadedContacts = Array.isArray(data) ? data : [];
       setContacts(loadedContacts);
     } catch (error) {
-      console.error("Load contacts error:", error);
       setContacts([]);
     }
   };
@@ -281,7 +303,6 @@ export default function useChat(user) {
               lastMessage: plainLastMessage,
             };
           } catch (error) {
-            console.error(`Recent chat load error for ${contact}:`, error);
             return {
               contact,
               roomId,
@@ -299,7 +320,6 @@ export default function useChat(user) {
 
       setRecentChats(results);
     } catch (error) {
-      console.error("Load recent chats error:", error);
       setRecentChats([]);
     }
   };
@@ -324,7 +344,6 @@ export default function useChat(user) {
         method: "GET",
       });
     } catch (error) {
-      console.warn("Backend wake attempt failed, continuing...", error);
     }
   };
 
@@ -351,7 +370,6 @@ export default function useChat(user) {
         stompClientRef.current.disconnect(() => {});
       }
     } catch (error) {
-      console.error("Disconnect error:", error);
     } finally {
       stompClientRef.current = null;
       setJoined(false);
@@ -398,7 +416,6 @@ export default function useChat(user) {
       setContacts(updatedContacts);
       await loadRecentChats(currentUser, updatedContacts, secretKey);
     } catch (error) {
-      console.error("Add contact error:", error);
       alert("Unable to add contact");
     }
   };
@@ -486,7 +503,6 @@ export default function useChat(user) {
             try {
               playNotify();
             } catch (e) {
-              console.warn("Notify sound could not play:", e);
             }
 
             showBrowserNotification(
@@ -504,7 +520,6 @@ export default function useChat(user) {
                 mergeMessages(prev, [...history, decryptedParsed])
               );
             } catch (error) {
-              console.error("History load error:", error);
               setMessages((prev) => mergeMessages(prev, [decryptedParsed]));
             }
 
@@ -531,7 +546,6 @@ export default function useChat(user) {
         );
       },
       (error) => {
-        console.error("STOMP connection error:", error);
         alert("Unable to connect to chat server.");
         disconnect();
       }

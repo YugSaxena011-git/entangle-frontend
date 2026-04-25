@@ -19,11 +19,10 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const BootSequence = ({ onComplete, playTyping, playPowerUp }) => {
+const BootSequence = ({ onComplete, playPowerUp }) => {
   const [logs, setLogs] = useState([]);
   const [progress, setProgress] = useState(0);
 
-  // Upgraded the text sequence to fit the Quantum aesthetic perfectly
   const bootMessages = [
     "Initializing ENTANGLE kernel...",
     "Bypassing standard network protocols...",
@@ -40,7 +39,6 @@ const BootSequence = ({ onComplete, playTyping, playPowerUp }) => {
     const logInterval = setInterval(() => {
       if (currentLog < bootMessages.length) {
         setLogs((prev) => [...prev, bootMessages[currentLog]]);
-        playTyping();
         currentLog++;
       }
     }, 400);
@@ -65,7 +63,7 @@ const BootSequence = ({ onComplete, playTyping, playPowerUp }) => {
       clearInterval(logInterval);
       clearInterval(progressInterval);
     };
-  }, [onComplete, playTyping, playPowerUp]);
+  }, [onComplete, playPowerUp]);
 
   return (
     <motion.div
@@ -97,7 +95,6 @@ const BootSequence = ({ onComplete, playTyping, playPowerUp }) => {
             }`}
           >
             {`> ${log}`}
-            {/* Added a subtle blinking terminal cursor to the active line for extra polish */}
             {index === logs.length - 1 && log !== "WELCOME TO ENTANGLE." && progress < 100 && (
               <span className="inline-block w-2 h-4 bg-indigo-400/80 ml-1 animate-pulse align-middle" />
             )}
@@ -343,10 +340,6 @@ export default function App() {
 
   const [playClick] = useSound("/sounds/click.mp3", { volume: 0.25 });
   const [playHover] = useSound("/sounds/hover.mp3", { volume: 0.15 });
-  const [playTyping] = useSound("/sounds/typing.mp3", {
-    volume: 0.15,
-    interrupt: false,
-  });
   const [playPowerUp] = useSound("/sounds/powerup.mp3", { volume: 0.4 });
 
   const handlePageChange = (pageId) => {
@@ -381,7 +374,6 @@ export default function App() {
         {isBooting ? (
           <BootSequence
             onComplete={() => setIsBooting(false)}
-            playTyping={playTyping}
             playPowerUp={playPowerUp}
           />
         ) : (
@@ -463,7 +455,6 @@ export default function App() {
               </div>
             </nav>
 
-            {/* This min-h-0 is crucial for the scrollbars! */}
             <main className="flex-1 w-full px-4 md:px-8 lg:px-12 py-4 md:py-6 flex flex-col relative z-10 min-h-0">
               <div className={currentPage === "home" ? "block flex-1 min-h-0" : "hidden"}>
                 <Landing setPage={setCurrentPage} />

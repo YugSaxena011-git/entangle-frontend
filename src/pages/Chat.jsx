@@ -45,24 +45,11 @@ export default function Chat({ chat }) {
   const chatBoxRef = useRef(null);
   const lastTypeTime = useRef(0);
 
-  // Applied the volume and pitch-shift hack for the haptic feel
-  const [playTyping] = useSound("/sounds/typing.mp3", {
-    volume: 0.2,
-    playbackRate: 0.6,
-    interrupt: true,
-  });
   const [playClick] = useSound("/sounds/click.mp3", { volume: 0.3 });
 
   const makeMessageKey = useCallback((msg) =>
-    [
-      msg.id || "",
-      msg.roomId || "",
-      msg.sender || "",
-      msg.type || "",
-      msg.content || "",
-      msg.createdAtEpoch || 0,
-      msg.timestamp || "",
-    ].join("|"), []);
+    `${msg.roomId || ""}-${msg.sender || ""}-${msg.createdAtEpoch || 0}`
+  , []);
 
   const orderedMessages = useMemo(() => {
     return [...messages].sort((a, b) => {
@@ -130,18 +117,11 @@ export default function Chat({ chat }) {
       return;
     }
 
-    // THE FIX: Ultra-fast 25ms throttle instead of 100ms
     const now = Date.now();
     if (now - lastTypeTime.current > 25) {
-      
-      // 1. True physical haptic for mobile devices (super light 10ms tap)
       if (typeof navigator !== "undefined" && navigator.vibrate) {
         navigator.vibrate(10); 
       }
-      
-      // 2. Audio fallback for desktop
-      playTyping();
-      
       lastTypeTime.current = now;
     }
   };
@@ -193,7 +173,6 @@ export default function Chat({ chat }) {
     <div className="w-full max-w-[1900px] mx-auto">
       <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:grid-cols-[300px_minmax(0,1fr)_300px] gap-4 lg:gap-5 h-[calc(100vh-10rem)] min-h-[500px]">
         
-        {/* Left Sidebar */}
         <aside className="min-w-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4 lg:gap-5 h-full overflow-y-auto custom-scrollbar pr-1 lg:pr-2 pb-6">
           <OperatorCard
             currentUser={currentUser}
@@ -276,7 +255,6 @@ export default function Chat({ chat }) {
           </ListCard>
         </aside>
 
-        {/* Center Panel */}
         <motion.section
           initial={{ opacity: 0, scale: 0.985 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -346,7 +324,7 @@ export default function Chat({ chat }) {
               orderedMessages.map((msg, i) => {
                 const isMine = msg.sender === currentUser;
                 const msgKey = makeMessageKey(msg);
-                const consumed = consumedMessages.has(msgKey);
+                const consumed = consumedMessages.has(msgKey) || msg.consumed === true || msg.plainContent === "[PURGED]" || msg.content === "[PURGED]";
 
                 const shownText =
                   msg.type === "ONE_TIME" && consumed
@@ -471,7 +449,6 @@ export default function Chat({ chat }) {
           </div>
         </motion.section>
 
-        {/* Right Sidebar - Fixes applied here */}
         <aside className="hidden xl:flex min-w-0 flex-col gap-4 h-full overflow-y-auto custom-scrollbar pl-2 pb-10">
           <PanelCard glow="emerald">
             <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-transparent via-emerald-500 to-transparent opacity-70" />
@@ -536,8 +513,6 @@ export default function Chat({ chat }) {
     </div>
   );
 }
-
-// Subcomponents
 
 function OperatorCard({ currentUser, secretKey, setSecretKey, joined, isConnecting, newContact, setNewContact, handleAddContact }) {
   return (
