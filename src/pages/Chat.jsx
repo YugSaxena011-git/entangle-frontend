@@ -130,9 +130,18 @@ export default function Chat({ chat }) {
       return;
     }
 
+    // THE FIX: Ultra-fast 25ms throttle instead of 100ms
     const now = Date.now();
-    if (now - lastTypeTime.current > 100) {
+    if (now - lastTypeTime.current > 25) {
+      
+      // 1. True physical haptic for mobile devices (super light 10ms tap)
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(10); 
+      }
+      
+      // 2. Audio fallback for desktop
       playTyping();
+      
       lastTypeTime.current = now;
     }
   };

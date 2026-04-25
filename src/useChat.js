@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import SockJS from "sockjs-client";
 import Stomp from "stompjs";
 import useSound from "use-sound";
@@ -208,7 +208,9 @@ export default function useChat(user) {
     return Promise.all(
       history.map(async (msg) => ({
         ...msg,
-        plainContent: await decryptQuantumVeil(msg.content, key, roomId),
+        plainContent: msg.type === "JOIN" || msg.type === "LEAVE"
+          ? msg.content
+          : await decryptQuantumVeil(msg.content, key, roomId),
       }))
     );
   };
@@ -263,11 +265,13 @@ export default function useChat(user) {
             const plainLastMessage = lastMessage
               ? {
                   ...lastMessage,
-                  plainContent: await decryptQuantumVeil(
-                    lastMessage.content,
-                    keyForPreview,
-                    roomId
-                  ),
+                  plainContent: lastMessage.type === "JOIN" || lastMessage.type === "LEAVE"
+                    ? lastMessage.content
+                    : await decryptQuantumVeil(
+                        lastMessage.content,
+                        keyForPreview,
+                        roomId
+                      ),
                 }
               : null;
 
@@ -463,7 +467,9 @@ export default function useChat(user) {
 
           const decryptedParsed = {
             ...parsed,
-            plainContent: await decryptQuantumVeil(parsed.content, key, roomId),
+            plainContent: parsed.type === "JOIN" || parsed.type === "LEAVE"
+              ? parsed.content
+              : await decryptQuantumVeil(parsed.content, key, roomId),
           };
 
           const incomingFromOther =
