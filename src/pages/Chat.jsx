@@ -12,6 +12,7 @@ import {
   Bell,
   Sparkles,
   Radio,
+  ArrowLeft,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import useSound from "use-sound";
@@ -22,6 +23,9 @@ export default function Chat({ chat }) {
   const [tamperMode, setTamperMode] = useState(false);
   const [oneTime, setOneTime] = useState(false);
   const [newContact, setNewContact] = useState("");
+  
+  // Mobile UI state
+  const [showMobileSidebar, setShowMobileSidebar] = useState(true);
 
   const {
     messages,
@@ -68,6 +72,13 @@ export default function Chat({ chat }) {
       });
     }
   }, [orderedMessages]);
+
+  // Snap to chat view on mobile when a room is joined
+  useEffect(() => {
+    if (activeRoomId) {
+      setShowMobileSidebar(false);
+    }
+  }, [activeRoomId]);
 
   const handleJoinPrivateChat = useCallback((contactName) => {
     connectToPrivateChat(currentUser, contactName, secretKey);
@@ -170,10 +181,10 @@ export default function Chat({ chat }) {
   ).length;
 
   return (
-    <div className="w-full max-w-[1900px] mx-auto">
-      <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:grid-cols-[300px_minmax(0,1fr)_300px] gap-4 lg:gap-5 h-[calc(100vh-10rem)] min-h-[500px]">
+    <div className="w-full max-w-[1900px] mx-auto h-full flex flex-col">
+      <div className="flex lg:grid lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:grid-cols-[300px_minmax(0,1fr)_300px] gap-4 lg:gap-5 h-[calc(100dvh-10rem)] min-h-[500px]">
         
-        <aside className="min-w-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4 lg:gap-5 h-full overflow-y-auto custom-scrollbar pr-1 lg:pr-2 pb-6">
+        <aside className={`${showMobileSidebar ? "grid" : "hidden"} lg:grid min-w-0 w-full lg:w-auto grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4 lg:gap-5 h-full overflow-y-auto custom-scrollbar pr-1 lg:pr-2 pb-6`}>
           <OperatorCard
             currentUser={currentUser}
             secretKey={secretKey}
@@ -193,11 +204,25 @@ export default function Chat({ chat }) {
           >
             {recentChats.map((chatItem) => {
               const active = selectedContact === chatItem.contact;
-              const preview =
-                chatItem.lastMessage?.plainContent ||
-                chatItem.lastMessage?.content ||
-                "[Encrypted]";
-              const time = chatItem.lastMessage?.timestamp || "";
+              const msg = chatItem.lastMessage;
+              let preview = "No messages yet";
+
+              if (msg) {
+                const msgKey = makeMessageKey(msg);
+                const consumed = consumedMessages.has(msgKey) || msg.consumed === true || msg.plainContent === "[PURGED]" || msg.content === "[PURGED]";
+
+                if (msg.type === "ONE_TIME" && consumed) {
+                  preview = "⚛ Collapsed payload";
+                } else if (msg.type === "JOIN" || msg.type === "LEAVE") {
+                  preview = msg.content;
+                } else if (msg.plainContent && msg.plainContent !== "[PURGED]") {
+                  preview = msg.plainContent;
+                } else {
+                  preview = "🔒 [Encrypted payload]";
+                }
+              }
+
+              const time = msg?.timestamp || "";
               const unread = unreadMap[chatItem.roomId] || 0;
 
               return (
@@ -258,16 +283,25 @@ export default function Chat({ chat }) {
         <motion.section
           initial={{ opacity: 0, scale: 0.985 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="min-w-0 flex flex-col rounded-3xl border border-white/10 bg-black/50 backdrop-blur-2xl shadow-2xl overflow-hidden h-full shrink-0"
+          className={`${!showMobileSidebar ? "flex" : "hidden"} lg:flex min-w-0 w-full lg:w-auto flex-col rounded-3xl border border-white/10 bg-black/50 backdrop-blur-2xl shadow-2xl overflow-hidden h-full shrink-0`}
         >
           <div className="shrink-0 border-b border-white/10 bg-white/[0.03] px-4 lg:px-6 py-4">
             <div className="flex items-center justify-between gap-3 min-w-0">
+              
+              {/* Mobile Back Button */}
+              <button
+                onClick={() => setShowMobileSidebar(true)}
+                className="lg:hidden shrink-0 flex items-center justify-center h-8 w-8 mr-2 rounded-full bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"
+              >
+                <ArrowLeft size={16} />
+              </button>
+
               <div className="min-w-0 flex-1">
-                <div className="text-[9px] xl:text-[10px] uppercase tracking-[0.2em] font-mono text-slate-500 truncate">
+                <div className="text-[9px] xl:text-[10px] uppercase tracking-[0.2em] font-mono text-slate-500 truncate hidden sm:block">
                   Encrypted Channel
                 </div>
 
-                <div className="mt-1 flex items-center gap-2.5 min-w-0">
+                <div className="sm:mt-1 flex items-center gap-2.5 min-w-0">
                   <div
                     className={`shrink-0 h-2.5 w-2.5 rounded-full shadow-lg ${
                       joined ? "bg-emerald-400 shadow-emerald-400/50" : "bg-slate-600"
@@ -279,11 +313,13 @@ export default function Chat({ chat }) {
                 </div>
               </div>
 
-              <div className="hidden sm:flex shrink-0 items-center gap-2 xl:gap-4">
-                <StatusPill
-                  label={joined ? "Connected" : isConnecting ? "Connecting" : "Idle"}
-                  tone={joined ? "emerald" : isConnecting ? "indigo" : "slate"}
-                />
+              <div className="flex shrink-0 items-center gap-2 xl:gap-4">
+                <div className="hidden sm:block">
+                  <StatusPill
+                    label={joined ? "Connected" : isConnecting ? "Connecting" : "Idle"}
+                    tone={joined ? "emerald" : isConnecting ? "indigo" : "slate"}
+                  />
+                </div>
 
                 <button
                   onClick={handleClearSession}
@@ -329,10 +365,11 @@ export default function Chat({ chat }) {
                 const shownText =
                   msg.type === "ONE_TIME" && consumed
                     ? "⚛ Wavefunction collapsed. Data purged."
-                    : msg.plainContent ||
-                      (msg.type === "JOIN" || msg.type === "LEAVE"
-                        ? msg.content
-                        : "[Encrypted payload]");
+                    : msg.plainContent && msg.plainContent !== "[PURGED]"
+                      ? msg.plainContent
+                      : msg.type === "JOIN" || msg.type === "LEAVE"
+                      ? msg.content
+                      : "🔒 [Encrypted payload]";
 
                 return (
                   <motion.div

@@ -119,12 +119,22 @@ export default function useChat(user) {
   const stompClientRef = useRef(null);
   const currentUserRef = useRef(user?.username || "");
   const activeRoomIdRef = useRef("");
+  const secretKeyRef = useRef(secretKey);
+  const contactsRef = useRef(contacts);
 
   const [playNotify] = useSound("/sounds/notify.mp3", {
     volume: 0.5,
     interrupt: true,
     soundEnabled: true,
   });
+
+  const playNotifyRef = useRef(playNotify);
+
+  useEffect(() => { playNotifyRef.current = playNotify; }, [playNotify]);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  useEffect(() => { activeRoomIdRef.current = activeRoomId; }, [activeRoomId]);
+  useEffect(() => { secretKeyRef.current = secretKey; }, [secretKey]);
+  useEffect(() => { contactsRef.current = contacts; }, [contacts]);
 
   const requestBrowserNotifications = async () => {
     if (!("Notification" in window)) {
@@ -157,14 +167,6 @@ export default function useChat(user) {
   };
 
   useEffect(() => {
-    currentUserRef.current = currentUser;
-  }, [currentUser]);
-
-  useEffect(() => {
-    activeRoomIdRef.current = activeRoomId;
-  }, [activeRoomId]);
-
-  useEffect(() => {
     if (user?.username) {
       setCurrentUser(user.username);
       loadContacts(user.username);
@@ -188,6 +190,86 @@ export default function useChat(user) {
       setRecentChats([]);
     }
   }, [currentUser, contacts, secretKey]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const socket = new SockJS(WS_BASE_URL);
+    const stomp = Stomp.over(socket);
+    stomp.debug = null;
+
+    stomp.connect({}, () => {
+      stompClientRef.current = stomp;
+
+      stomp.subscribe("/topic/messages", async (msg) => {
+        const parsed = JSON.parse(msg.body);
+        const safeCurrentUser = currentUserRef.current.toLowerCase();
+
+        if (!parsed.roomId.includes(safeCurrentUser)) return;
+
+        const isForActiveRoom = parsed.roomId === activeRoomIdRef.current;
+        const incomingFromOther = parsed.sender.toLowerCase() !== safeCurrentUser && parsed.type !== "JOIN" && parsed.type !== "LEAVE";
+
+        if (incomingFromOther && (!isForActiveRoom || document.hidden)) {
+          if (!isForActiveRoom) {
+            setUnreadMap((prev) => ({
+              ...prev,
+              [parsed.roomId]: (prev[parsed.roomId] || 0) + 1,
+            }));
+          }
+
+          try { playNotifyRef.current(); } catch (e) {}
+
+          showBrowserNotification(
+            `ENTANGLE • @${parsed.sender}`,
+            parsed.type === "ONE_TIME" ? "New Heisenberg one-time message" : "New encrypted payload received"
+          );
+        }
+
+        if (isForActiveRoom) {
+          if ((parsed.integrityStatus === "DENIED" || parsed.integrityStatus === "JOIN_LOCKED") && parsed.sender.toLowerCase() === safeCurrentUser) {
+            alert(parsed.content);
+            setMessages([]);
+            setJoined(false);
+            setIsConnecting(false);
+            setActiveRoomId("");
+            setSelectedContact("");
+            return;
+          }
+
+          const decryptedParsed = {
+            ...parsed,
+            plainContent: parsed.type === "JOIN" || parsed.type === "LEAVE"
+              ? parsed.content
+              : await decryptQuantumVeil(parsed.content, secretKeyRef.current, parsed.roomId),
+          };
+
+          if (parsed.type === "JOIN" && parsed.sender.toLowerCase() === safeCurrentUser) {
+            try {
+              const history = await loadHistory(parsed.roomId, secretKeyRef.current);
+              setMessages((prev) => mergeMessages(prev, [...history, decryptedParsed]));
+            } catch (error) {
+              setMessages((prev) => mergeMessages(prev, [decryptedParsed]));
+            }
+            setJoined(true);
+            setIsConnecting(false);
+            setUnreadMap((prev) => ({ ...prev, [parsed.roomId]: 0 }));
+          } else {
+            setMessages((prev) => mergeMessages(prev, [decryptedParsed]));
+          }
+        }
+
+        await loadRecentChats(currentUserRef.current, contactsRef.current, secretKeyRef.current);
+      });
+    });
+
+    return () => {
+      if (stompClientRef.current) {
+        stompClientRef.current.disconnect(() => {});
+        stompClientRef.current = null;
+      }
+    };
+  }, [currentUser]);
 
   const makeKey = (msg) => `${msg.roomId || ""}-${msg.sender || ""}-${msg.createdAtEpoch || 0}`;
 
@@ -440,10 +522,6 @@ export default function useChat(user) {
       return;
     }
 
-    if (stompClientRef.current) {
-      disconnect();
-    }
-
     setCurrentUser(normalizedUser);
     setSelectedContact(normalizedContact);
     setSecretKey(key);
@@ -454,87 +532,9 @@ export default function useChat(user) {
 
     await wakeBackend();
 
-    const socket = new SockJS(WS_BASE_URL);
-    const stomp = Stomp.over(socket);
-    stomp.debug = null;
-
-    stomp.connect(
-      {},
-      () => {
-        stompClientRef.current = stomp;
-
-        stomp.subscribe("/topic/messages", async (msg) => {
-          const parsed = JSON.parse(msg.body);
-
-          if (parsed.roomId !== roomId) return;
-
-          if (
-            (parsed.integrityStatus === "DENIED" ||
-              parsed.integrityStatus === "JOIN_LOCKED") &&
-            parsed.sender === normalizedUser
-          ) {
-            alert(parsed.content);
-            setMessages([]);
-            setJoined(false);
-            setIsConnecting(false);
-            setActiveRoomId("");
-            setSelectedContact("");
-            return;
-          }
-
-          const decryptedParsed = {
-            ...parsed,
-            plainContent: parsed.type === "JOIN" || parsed.type === "LEAVE"
-              ? parsed.content
-              : await decryptQuantumVeil(parsed.content, key, roomId),
-          };
-
-          const incomingFromOther =
-            decryptedParsed.sender !== currentUserRef.current &&
-            decryptedParsed.type !== "JOIN" &&
-            decryptedParsed.type !== "LEAVE";
-
-          if (incomingFromOther && activeRoomIdRef.current !== roomId) {
-            setUnreadMap((prev) => ({
-              ...prev,
-              [roomId]: (prev[roomId] || 0) + 1,
-            }));
-
-            try {
-              playNotify();
-            } catch (e) {
-            }
-
-            showBrowserNotification(
-              `ENTANGLE • @${decryptedParsed.sender || "unknown"}`,
-              decryptedParsed.type === "ONE_TIME"
-                ? "New Heisenberg one-time message"
-                : "New encrypted message"
-            );
-          }
-
-          if (parsed.type === "JOIN" && parsed.sender === normalizedUser) {
-            try {
-              const history = await loadHistory(roomId, key);
-              setMessages((prev) =>
-                mergeMessages(prev, [...history, decryptedParsed])
-              );
-            } catch (error) {
-              setMessages((prev) => mergeMessages(prev, [decryptedParsed]));
-            }
-
-            setJoined(true);
-            setIsConnecting(false);
-            setUnreadMap((prev) => ({ ...prev, [roomId]: 0 }));
-            await loadRecentChats(normalizedUser, contacts, key);
-            return;
-          }
-
-          setMessages((prev) => mergeMessages(prev, [decryptedParsed]));
-          await loadRecentChats(normalizedUser, contacts, key);
-        });
-
-        stomp.send(
+    setTimeout(() => {
+      if (stompClientRef.current && stompClientRef.current.connected) {
+        stompClientRef.current.send(
           "/app/addUser",
           {},
           JSON.stringify({
@@ -544,12 +544,11 @@ export default function useChat(user) {
             type: "JOIN",
           })
         );
-      },
-      (error) => {
-        alert("Unable to connect to chat server.");
-        disconnect();
+      } else {
+        alert("Secure socket not established yet. Please check connection.");
+        setIsConnecting(false);
       }
-    );
+    }, 100);
   };
 
   const sendMessage = async (

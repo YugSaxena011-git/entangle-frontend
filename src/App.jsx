@@ -71,7 +71,7 @@ const BootSequence = ({ onComplete, playPowerUp }) => {
       initial={{ opacity: 1 }}
       exit={{ opacity: 0, scale: 1.05, filter: "blur(16px)" }}
       transition={{ duration: 0.9, ease: "easeInOut" }}
-      className="fixed inset-0 z-[100] bg-black flex flex-col justify-end p-12 font-mono"
+      className="fixed inset-0 z-[100] bg-black flex flex-col justify-end p-12 font-mono min-h-[100dvh]"
     >
       <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[size:100%_4px] pointer-events-none opacity-50" />
 
@@ -139,7 +139,7 @@ const VideoBackground = () => {
 
 function StartScreen({ onStart, playClick }) {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center font-mono selection:bg-indigo-500/40 relative overflow-hidden">
+    <div className="min-h-[100dvh] bg-black flex items-center justify-center font-mono selection:bg-indigo-500/40 relative overflow-hidden">
       <VideoBackground />
 
       <div className="relative z-10 w-full max-w-5xl px-8">
@@ -349,7 +349,7 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center font-mono">
+      <div className="min-h-[100dvh] bg-black text-white flex items-center justify-center font-mono">
         Loading session...
       </div>
     );
@@ -369,7 +369,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col font-sans selection:bg-indigo-500/40 text-slate-300 relative overflow-hidden bg-black">
+    <div className="min-h-[100dvh] flex flex-col font-sans selection:bg-indigo-500/40 text-slate-300 relative overflow-hidden bg-black">
       <AnimatePresence mode="wait">
         {isBooting ? (
           <BootSequence
@@ -382,7 +382,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 1 }}
-            className="flex-1 flex flex-col relative z-10 w-full h-screen"
+            className="flex-1 flex flex-col relative z-10 w-full h-[100dvh]"
           >
             <VideoBackground />
 
